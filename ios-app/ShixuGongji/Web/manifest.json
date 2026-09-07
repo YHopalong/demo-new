@@ -1,0 +1,25 @@
+{
+  "name": "时序躬记",
+  "short_name": "时序躬记",
+  "description": "个人效率工作台：任务管理、每日打卡、日报周报、灵光闪现、数据报表",
+  "start_url": "workbench-desktop.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f3f0",
+  "theme_color": "#f4f3f0",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
