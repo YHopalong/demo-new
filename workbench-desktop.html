@@ -935,13 +935,17 @@
   .course-list-loc { font-size:12px; color:var(--text-tertiary); display:flex; align-items:center; gap:3px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .course-list-del { border:none; background:transparent; color:var(--text-tertiary); cursor:pointer; font-size:15px; padding:4px 8px; border-radius:6px; }
   /* 编辑器：每周循环多段有效区间 */
-  .wk-range-row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .wk-range-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
   .wk-range-row .wk-start, .wk-range-row .wk-end { flex:1 1 0; min-width:0; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:13px; padding:7px 9px; }
   .wk-range-row .wk-loc { flex:1.3 1 110px; min-width:90px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:13px; padding:7px 9px; }
   .wk-range-row .wk-sep { color:var(--text-secondary); flex:0 0 auto; }
   .wk-range-row .wk-range-del { border:1px solid var(--border); background:var(--surface); color:var(--danger); border-radius:8px; width:30px; height:30px; font-size:16px; line-height:1; cursor:pointer; flex:0 0 auto; }
   .wk-range-row .wk-range-del:hover { background:var(--danger-muted); }
   .wk-range-row.wk-range-row-focus { box-shadow:0 0 0 2px var(--accent); border-radius:10px; }
+  .wk-period-zone { display:flex; flex-wrap:wrap; align-items:center; gap:4px; width:100%; margin-top:2px; }
+  .wk-period-zone-label { font-size:12px; color:var(--text-secondary); margin-right:2px; }
+  .wk-ppill { min-width:24px; height:24px; padding:0 5px; font-size:12px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; line-height:1; }
+  .wk-ppill.on { background:var(--accent); color:#fff; border-color:var(--accent); }
   #f-wk-add { margin-top:8px; }
   .course-list-del:hover { color:var(--danger); background:var(--danger-muted, #fbe9e7); }
 
@@ -3570,13 +3574,19 @@ function courseLocationAt(dateISO, c){
   const hit = ranges.find(r => r.location);
   return (hit && hit.location) || c.location || "";
 }
+function coursePeriodsAt(dateISO, c){
+  // 返回该日期的有效节次：优先命中带 periods 的区间（支持调课换节次），否则回落课程默认节次
+  const ranges = (c.wkRanges||[]).filter(r => (!r.start || dateISO>=r.start) && (!r.end || dateISO<=r.end));
+  const hit = ranges.find(r => r.periods && r.periods.length);
+  return (hit && hit.periods && hit.periods.length) ? hit.periods : (c.periods||[]);
+}
 function findCourseAt(dateISO, period){
   if(!dateISO || !period) return null;
   const dow = dayOfWeekISO(dateISO); // 0=周日
-  return (data.teaching||[]).find(x => x && Array.isArray(x.periods) && x.periods.includes(period) && (
+  return (data.teaching||[]).find(x => x && (
     (x.repeat!=="weekly" && x.date===dateISO) ||        // 单次：具体日期匹配
     (x.repeat==="weekly" && x.weekday===dow && courseInRange(dateISO, x))  // 每周循环：星期匹配且落在起止区间
-  )) || null;
+  ) && (coursePeriodsAt(dateISO, x)||[]).includes(period)) || null;
 }
 function refreshCoursePeriodHighlight(){
   const nm = nowMin();
@@ -4527,7 +4537,7 @@ function courseWeekTabHTML(weekStartISO, week){
       const ex = findCourseAt(d, p.n);
       if(ex){
         const loc = courseLocationAt(d, ex);
-        const all = (ex.periods||[]).slice().sort((a,b)=>a-b);
+        const all = coursePeriodsAt(d, ex).slice().sort((a,b)=>a-b);
         const pStart = all[0], pEnd = all[all.length-1];
         const color = ex.color || pickCourseColor(ex.title||"");
         const colorStyle = `background:${hexA(color,0.13)};color:${color};border-color:${hexA(color,0.35)}`;
@@ -4593,7 +4603,12 @@ function courseListTabHTML(){
     const ps = (x.periods||[]).slice().sort((a,b)=>a-b);
     const pLabel = ps.length>1 ? `第${cn(ps[0])}–${cn(ps[ps.length-1])}节（连堂）` : (ps.length?`第${cn(ps[0])}节`:'未排节次');
     const ranges = (x.wkRanges && x.wkRanges.length) ? x.wkRanges : (x.wkStart||x.wkEnd ? [{start:x.wkStart||"", end:x.wkEnd||""}] : []);
-    const rangeTxt = ranges.length ? ` <span class="course-list-range">${ranges.map(r=>`${r.start?r.start.slice(5):'…'}~${r.end?r.end.slice(5):'…'}${r.location?`（${r.location}）`:''}`).join(" / ")}</span>` : '';
+    const rangeTxt = ranges.length ? ` <span class="course-list-range">${ranges.map(r=>{
+      const sp=[]; if(r.location) sp.push(r.location);
+      if(r.periods&&r.periods.length) sp.push('第'+r.periods.slice().sort((a,b)=>a-b).map(pr=>cn(pr)).join('、')+'节');
+      const seg=sp.length?`（${sp.join('·')}）`:'';
+      return `${r.start?r.start.slice(5):'…'}~${r.end?r.end.slice(5):'…'}${seg}`;
+    }).join(" / ")}</span>` : '';
     const dateLabel = (x.repeat==="weekly")
       ? `<span class="course-list-date course-list-weekly">每周周${weekCn[x.weekday||0]}${rangeTxt}</span>`
       : `<span class="course-list-date">${esc((x.date||'').slice(5))}</span>`;
@@ -5384,7 +5399,15 @@ function openEditor(key, item, hints){
     const rep=(d.repeat||"once");
     const wkOpts=[1,2,3,4,5,6,0].map(w=>{ const wcn=["日","一","二","三","四","五","六"][w]; const on=(d.weekday!=null?+d.weekday:dayOfWeekISO(d.date||isoToday()))===w; return `<div class="opt ${on?'on':''}" data-v="${w}" style="flex:0 0 auto;min-width:auto">周${wcn}</div>`; }).join("");
     const wkRanges=(Array.isArray(d.wkRanges)&&d.wkRanges.length)?d.wkRanges:(d.wkStart||d.wkEnd?[{start:d.wkStart||"",end:d.wkEnd||""}]:[]);
-    const wkRangeRows=wkRanges.map(r=>`<div class="wk-range-row"><input type="date" class="wk-start" value="${r.start||''}"/> <span class="wk-sep">~</span> <input type="date" class="wk-end" value="${r.end||''}"/> <input type="text" class="wk-loc" value="${attr(r.location||'')}" placeholder="本段教室（选填）"/> <button type="button" class="wk-range-del" title="删除该区间">×</button></div>`).join("");
+    const wkRangeRows=wkRanges.map(r=>{
+      const rp = (r.periods && r.periods.length) ? r.periods : [];
+      return `<div class="wk-range-row">
+        <input type="date" class="wk-start" value="${r.start||''}"/> <span class="wk-sep">~</span> <input type="date" class="wk-end" value="${r.end||''}"/>
+        <input type="text" class="wk-loc" value="${attr(r.location||'')}" placeholder="本段教室（选填）"/>
+        <div class="wk-period-zone"><span class="wk-period-zone-label">本段节次</span>${COURSE_PERIODS.map(pr=>`<button type="button" class="wk-ppill ${rp.includes(pr.n)?'on':''}" data-p="${pr.n}">${pr.n}</button>`).join("")}</div>
+        <button type="button" class="wk-range-del" title="删除该区间">×</button>
+      </div>`;
+    }).join("");
     fields=`<div class="field"><label>课程名称</label><input id="f-title" value="${attr(d.title)}" placeholder="例如：国际贸易法"/></div>
       <div class="field"><label>上课安排</label><div class="seg" id="f-repeat">${[["once","单次日期"],["weekly","每周循环"]].map(r=>`<div class="opt ${r[0]===rep?'on':''}" data-v="${r[0]}" style="flex:0 0 auto;min-width:auto">${r[1]}</div>`).join("")}</div></div>
       <div class="field" id="f-date-wrap" style="${rep==="weekly"?'display:none':''}"><label>上课日期</label><input id="f-date" type="date" value="${d.date||isoToday()}"/></div>
@@ -5392,7 +5415,7 @@ function openEditor(key, item, hints){
       <div class="field" id="f-wkrange-wrap" style="${rep!=="weekly"?'display:none':''}"><label>循环有效区间（可加多段，选填）</label>
         <div id="f-wkranges">${wkRangeRows}</div>
         <button type="button" class="btn ghost sm" id="f-wk-add">＋ 增加区间</button>
-        <p class="sub" style="margin:6px 0 0">起止留空表示整个学期都上课；可添加多段不连续的区间，例如第 1-2 周、第 4-5 周、第 8-9 周上课（中间停课周不填即可）。某段<b>换教室</b>时，在该行的「本段教室」填入新地点即可，周视图会自动显示对应周次的教室。</p>
+        <p class="sub" style="margin:6px 0 0">起止留空表示整个学期都上课；可添加多段不连续的区间，例如第 1-2 周、第 4-5 周、第 8-9 周上课（中间停课周不填即可）。某段<b>换教室</b>或<b>调课换节次</b>时，在该行的「本段教室」「本段节次」分别填入即可，周视图会自动按对应周次显示教室与节次（留空则用课程默认）。</p>
       </div>
       <div class="field"><label>节次（可多选连堂）</label><div class="period-picker" id="f-periods">${periodBtns}</div></div>
       <div class="field"><label>教室 / 地点</label><input id="f-location" value="${attr(d.location||'')}" placeholder="例如：北主楼 401"/></div>
@@ -5536,7 +5559,8 @@ function openEditor(key, item, hints){
           const s=(row.querySelector(".wk-start").value||"").trim();
           const e=(row.querySelector(".wk-end").value||"").trim();
           const l=(row.querySelector(".wk-loc").value||"").trim();
-          if(s||e) ranges.push({start:s, end:e, location:l});
+          const ps=[...row.querySelectorAll(".wk-ppill.on")].map(b=>+b.dataset.p).sort((a,b)=>a-b);
+          if(s||e) ranges.push({start:s, end:e, location:l, periods:ps});
         });
         d.wkRanges=ranges;
       } else {
@@ -5623,12 +5647,15 @@ function bindCourseEditor(overlay, d, hints){
   // 每周循环：多段有效区间 增/删
   const bindRangeDel=()=>{ overlay.querySelectorAll("#f-wkranges .wk-range-del").forEach(b=>{ b.onclick=()=>{ const row=b.closest(".wk-range-row"); if(row) row.remove(); }; }); };
   bindRangeDel();
+  // 区间行内「本段节次」多选
+  overlay.querySelectorAll("#f-wkranges .wk-ppill").forEach(b=>{ b.onclick=()=>b.classList.toggle("on"); });
   const addRangeBtn = overlay.querySelector("#f-wk-add");
   if(addRangeBtn) addRangeBtn.onclick=()=>{
     const box=overlay.querySelector("#f-wkranges"); if(!box) return;
     const row=document.createElement("div"); row.className="wk-range-row";
-    row.innerHTML=`<input type="date" class="wk-start" value=""/> <span class="wk-sep">~</span> <input type="date" class="wk-end" value=""/> <input type="text" class="wk-loc" value="" placeholder="本段教室（选填）"/> <button type="button" class="wk-range-del" title="删除该区间">×</button>`;
+    row.innerHTML=`<input type="date" class="wk-start" value=""/> <span class="wk-sep">~</span> <input type="date" class="wk-end" value=""/> <input type="text" class="wk-loc" value="" placeholder="本段教室（选填）"/> <div class="wk-period-zone"><span class="wk-period-zone-label">本段节次</span>${COURSE_PERIODS.map(pr=>`<button type="button" class="wk-ppill" data-p="${pr.n}">${pr.n}</button>`).join("")}</div> <button type="button" class="wk-range-del" title="删除该区间">×</button>`;
     box.appendChild(row);
+    row.querySelectorAll(".wk-ppill").forEach(b=>b.onclick=()=>b.classList.toggle("on"));
     row.querySelector(".wk-range-del").onclick=()=>row.remove();
   };
   // 从周视图某天点开编辑：自动高亮并滚动到命中的区间行，便于改当段教室
